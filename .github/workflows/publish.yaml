@@ -9,10 +9,43 @@ on:
 jobs:
   call:
     uses: jellyfin/jellyfin-meta-plugins/.github/workflows/publish.yaml@master
-    with:
-      version: ${{ github.event.release.tag_name }}
-      is-unstable: ${{ github.event.release.prerelease }}
-    secrets:
-      deploy-host: ${{ secrets.DEPLOY_HOST }}
-      deploy-user: ${{ secrets.DEPLOY_USER }}
-      deploy-key: ${{ secrets.DEPLOY_KEY }}
+
+  update-manifest:
+    runs-on: ubuntu-latest
+    needs:
+      - publish
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          ref: "master"
+
+      - name: Get latest release
+        id: latest-release
+        uses: rez0n/actions-github-release@v1.8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          type: latest
+          repository: ${{ github.repository }}
+
+      - name: Download latest release
+        uses: robinraju/release-downloader@v1.3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          latest: true
+          repository: ${{ github.repository }}
+          filename: "*"
+          out-file-path: artifacts
+
+      - name: Update manifest
+        run: |
+          jprm repo add --url ${{ steps.latest-release.outputs.browser_download_url }} ./manifest.json artifacts/*.zip
+
+      - name: Commit manifest
+        run: |
+          git config user.name jellyfin-bot
+          git config user.email team@jellyfin.org
+          git pull
+          git add ./manifest.json
+          git commit -m "Update manifest.json"
+          git push --force origin master
